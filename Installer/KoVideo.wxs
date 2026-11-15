@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="KoView" Language="1033" Version="1.0.18" Manufacturer="KoView"
+           UpgradeCode="CC580DEB-C9A9-455E-936A-6FB795080C55">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perUser" Platform="x64" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of KoView is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+    <Icon Id="AppIcon.ico" SourceFile="$(var.Icon)" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="LocalAppDataFolder">
+        <Directory Id="INSTALLDIR" Name="KoView" />
+      </Directory>
+      <Directory Id="ProgramMenuFolder" />
+    </Directory>
+    <DirectoryRef Id="INSTALLDIR">
+      <Component Id="AppFiles" Guid="75a5f8ef-1119-45b7-838d-37cc979be73b" Win64="yes">
+        <File Id="KoViewExe" Source="$(var.Payload)\KoView.exe" />
+        <File Source="$(var.Payload)\libmpv-2.dll" />
+        <File Source="$(var.Payload)\DotNet-LICENSE.txt" />
+        <File Source="$(var.Payload)\DotNet-ThirdPartyNotices.txt" />
+        <File Source="$(var.Payload)\WebView2-LICENSE.txt" />
+        <File Source="$(var.Payload)\WebView2-NOTICE.txt" />
+        <File Source="$(var.Payload)\Mpv-Distribution-Notice.txt" />
+        <File Source="$(var.Payload)\Mpv-Copyright.txt" />
+        <File Source="$(var.Payload)\Mpv-LICENSE.GPL.txt" />
+        <File Source="$(var.Payload)\FFmpeg-COPYING.GPLv3.txt" />
+        <RegistryValue Root="HKCU" Key="Software\KoView" Name="InstallPath" Value="[INSTALLDIR]" Type="string" KeyPath="yes" />
+        <RemoveFolder Id="RemoveInstallDir" On="uninstall" />
+      </Component>
+      <Component Id="FileAssociations" Guid="70b5858b-9a91-43da-8dcf-73bc4dc6da7d" Win64="yes">
+        <RegistryValue Root="HKCU" Key="Software\RegisteredApplications" Name="KoView" Value="Software\KoView\Capabilities" Type="string" KeyPath="yes" />
+        <RegistryValue Root="HKCU" Key="Software\KoView\Capabilities" Name="ApplicationName" Value="KoView" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\KoView\Capabilities" Name="ApplicationDescription" Value="KoView video player" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\KoView\Capabilities" Name="ApplicationIcon" Value="[INSTALLDIR]KoView.exe,0" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\KoVideo.Video" Value="KoView video" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\KoVideo.Video\DefaultIcon" Value="[INSTALLDIR]KoView.exe,0" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\KoVideo.Video\shell\open\command" Value="&quot;[INSTALLDIR]KoView.exe&quot; &quot;%1&quot;" Type="string" />
+        <!-- File associations -->
+      </Component>
+    </DirectoryRef>
+    <DirectoryRef Id="ProgramMenuFolder">
+      <Component Id="StartShortcut" Guid="3bbc8f3f-6ec4-4ced-b06c-e64600002268" Win64="yes">
+        <Shortcut Id="StartKoView" Name="KoView" Target="[INSTALLDIR]KoView.exe" WorkingDirectory="INSTALLDIR" Icon="AppIcon.ico">
+          <ShortcutProperty Key="System.AppUserModel.ID" Value="KoView.Player" />
+        </Shortcut>
+        <RegistryValue Root="HKCU" Key="Software\KoView" Name="StartShortcut" Value="1" Type="integer" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+    <Feature Id="KoViewFeature" Title="KoView" Level="1">
+      <ComponentRef Id="AppFiles" />
+      <ComponentRef Id="FileAssociations" />
+      <ComponentRef Id="StartShortcut" />
+    </Feature>
+  </Product>
+</Wix>

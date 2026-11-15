@@ -1,0 +1,17 @@
+KoView third-party notice: libmpv
+
+KoView loads the unmodified Windows x64 libmpv-2.dll from shinchiro's
+mpv-dev-x86_64-20261111-git-bcde6b93cc.7z release.
+https://github.com/shinchiro/mpv-winbuild-cmake/releases/tag/20261111
+DLL SHA-256: 88504EE5560942A955405E99DFB5971368E4CF851321F36565BF2A667271DB1B
+
+mpv source revision: bcde6b93cca4d128d84e1a60d1a6db2cd81c889e
+https://github.com/mpv-player/mpv/tree/bcde6b93cca4d128d84e1a60d1a6db2cd81c889e
+FFmpeg source revision reported by this DLL: cd4e96eb314630788b7ff2f9820c395788c023e2
+https://github.com/FFmpeg/FFmpeg/tree/cd4e96eb314630788b7ff2f9820c395788c023e2
+Windows build recipes and patches: bda10a2816ce9908d419b3f4b564227330457e76
+https://github.com/shinchiro/mpv-winbuild-cmake/tree/bda10a2816ce9908d419b3f4b564227330457e76
+
+See Mpv-Copyright.txt, Mpv-LICENSE.GPL.txt, and FFmpeg-COPYING.GPLv3.txt.
+These upstream references identify part of the corresponding source. For this
+test build, the full dependency revisions and notices are still under review.

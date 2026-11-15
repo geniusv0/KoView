@@ -1,0 +1,15 @@
+# .NET and installer output
+/bin/
+/obj/
+/dist/
+
+# Downloaded libmpv build and developer files
+/engine/libmpv-2.dll
+/engine/libmpv.7z
+/engine/libmpv.dll.a
+/engine/include/
+
+# Local IDE settings
+/.vs/
+*.user
+*.suo
