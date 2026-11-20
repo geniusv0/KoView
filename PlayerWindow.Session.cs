@@ -77,7 +77,10 @@ internal sealed partial class PlayerWindow
         if (folderVideos.Length == 0)
             return;
         int selected = Array.IndexOf(folderVideos, session.Selected);
-        PlayPlaylistItem(Math.Max(0, selected));
+        folderIndex = Math.Max(0, selected);
+        string file = folderVideos[folderIndex];
+        OpenMedia(file, Path.GetFileName(file));
+        RefreshPlaylist();
     }
 
     private static bool IsRtsp(string? source) =>
@@ -252,7 +255,7 @@ internal sealed partial class PlayerWindow
     private void ShowPlayerStatus(string? message)
     {
         var status = video.Controls[0];
-        status.Text = message ?? "영상 열기  ·  Ctrl+O";
+        status.Text = message ?? EmptyPlayerText;
         status.Visible = desktop is null && (message is not null || path is null);
     }
 

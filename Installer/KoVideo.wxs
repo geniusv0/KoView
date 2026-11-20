@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-  <Product Id="*" Name="KoView" Language="1033" Version="1.0.18" Manufacturer="KoView"
+  <Product Id="*" Name="KoView" Language="1033" Version="1.0.28" Manufacturer="KoView"
            UpgradeCode="CC580DEB-C9A9-455E-936A-6FB795080C55">
     <Package InstallerVersion="500" Compressed="yes" InstallScope="perUser" Platform="x64" />
     <MajorUpgrade DowngradeErrorMessage="A newer version of KoView is already installed." />

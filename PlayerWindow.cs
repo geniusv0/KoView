@@ -16,13 +16,13 @@ internal sealed partial class PlayerWindow : Form, IMessageFilter
     private static readonly Color WindowEdge = Color.FromArgb(46, 46, 49);
     private static readonly Color Ink = Color.FromArgb(213, 213, 217);
     private static readonly Padding FramePadding = new(2);
+    private const string EmptyPlayerText = "파일을 여기에 놓으세요";
     private readonly Panel video = new() { Dock = DockStyle.Fill, BackColor = Color.Black };
     private readonly Label caption = new() { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true, Padding = new Padding(9, 0, 0, 0) };
-    private readonly Label clock = new() { Dock = DockStyle.Right, Width = 126, TextAlign = ContentAlignment.MiddleRight, Padding = new Padding(0, 0, 8, 0) };
-    private readonly Label frame = new() { Dock = DockStyle.Right, Width = 95, Text = "프레임 —", TextAlign = ContentAlignment.MiddleRight, AutoEllipsis = true };
+    private readonly Label clock = new() { TextAlign = ContentAlignment.MiddleRight, AutoEllipsis = true };
+    private readonly Label frame = new() { Text = "프레임 —", TextAlign = ContentAlignment.MiddleRight, AutoEllipsis = true };
     private readonly PlaybackSlider timeline = new() { Dock = DockStyle.Fill, BackColor = Chrome, TabStop = false };
     private readonly Button playback;
-    private readonly Button desktopButton;
     private readonly Panel bar;
     private readonly Panel controls;
     private bool fullscreen;
@@ -30,6 +30,7 @@ internal sealed partial class PlayerWindow : Form, IMessageFilter
     private long chromeDeadline;
     private Point lastCursorPosition = Cursor.Position;
     private ContextMenuStrip? settingsMenu;
+    private bool settingsRequested;
     private Rectangle fullscreenBounds;
     private FormWindowState fullscreenState;
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 35 };
@@ -45,6 +46,7 @@ internal sealed partial class PlayerWindow : Form, IMessageFilter
     private ListBox? playlistList;
     private bool repeatVideo;
     private bool loaded, dragging, stepped;
+    private bool resizingWindow;
     private bool playOnLoad;
     private bool sizeToVideo;
     private bool resizeAfterAspectChange;
@@ -69,56 +71,83 @@ internal sealed partial class PlayerWindow : Form, IMessageFilter
         BackColor = WindowEdge;
         ForeColor = Ink;
         Font = new Font("Segoe UI", 9);
-        Padding = FramePadding;
-        MinimumSize = new Size(405, 104);
+        UpdateResizePadding();
+        MinimumSize = ResizeMinimum;
         ClientSize = new Size(840, 510);
         StartPosition = FormStartPosition.CenterScreen;
         AllowDrop = true;
 
         bar = CreateTitleBar(this, caption);
         LocationChanged += (_, _) => PositionDockedPlaylist();
-        SizeChanged += (_, _) => PositionDockedPlaylist();
-        DpiChanged += (_, _) => BeginInvoke(KeepPlaylistOnScreen);
+        SizeChanged += (_, _) =>
+        {
+            UpdateResizePadding();
+            PositionDockedPlaylist();
+        };
+        DpiChanged += (_, _) => BeginInvoke(() =>
+        {
+            UpdateResizePadding();
+            KeepPlaylistOnScreen();
+        });
         Microsoft.Win32.SystemEvents.DisplaySettingsChanged += DisplaySettingsChanged;
 
-        controls = new Panel { Dock = DockStyle.Bottom, Height = 26, BackColor = Chrome };
+        controls = new Panel { Dock = DockStyle.Bottom, Height = LogicalToDeviceUnits(32), BackColor = Chrome };
         playback = MakeButton("▶", "재생 / 일시정지 (Space)", TogglePause, DockStyle.Left, 38);
-        desktopButton = MakeButton("▣", "바탕화면 재생 / 일반 창 (Ctrl+D)", ToggleDesktop, DockStyle.Right, 39);
+        var information = new Panel { Dock = DockStyle.Right, BackColor = Chrome };
+        information.Controls.AddRange([frame, clock]);
         controls.Controls.Add(timeline);
-        controls.Controls.Add(frame);
-        controls.Controls.Add(clock);
+        controls.Controls.Add(information);
         var settings = MakeButton("⚙", "설정", ShowSettings, DockStyle.Right, 36);
-        var openFile = MakeButton("열기", "파일 열기 (Ctrl+O)", OpenDialog, DockStyle.Left, 52);
         controls.Controls.Add(settings);
-        controls.Controls.Add(desktopButton);
-        controls.Controls.Add(openFile);
         controls.Controls.Add(playback);
-        controls.ClientSizeChanged += (_, _) =>
+        void LayoutControls()
         {
             int width = controls.ClientSize.Width;
-            int reserved = settings.Width + playback.Width + 56;
+            int Px(int size) => controls.LogicalToDeviceUnits(size);
+            int minimumSlider = Px(34);
+            bool stacked = width < Px(258);
+            int infoWidth = stacked ? Math.Max(0, Math.Min(Px(112), width - minimumSlider)) : Px(218);
+            int height = controls.ClientSize.Height;
             controls.SuspendLayout();
-            settings.Visible = width >= settings.Width + 32;
-            playback.Visible = width >= reserved;
-            desktopButton.Visible = width >= (reserved += desktopButton.Width);
-            openFile.Visible = width >= (reserved += openFile.Width);
-            clock.Visible = width >= (reserved += clock.Width);
-            frame.Visible = width >= reserved + frame.Width;
+            information.Width = infoWidth;
+            int frameWidth = stacked ? infoWidth : Px(94);
+            frame.SetBounds(0, 0, Math.Max(0, frameWidth - Px(3)), stacked ? height / 2 : height);
+            int clockLeft = stacked ? 0 : frameWidth;
+            clock.SetBounds(clockLeft, stacked ? height / 2 : 0,
+                Math.Max(0, infoWidth - clockLeft - Px(5)), stacked ? height - height / 2 : height);
+            int remaining = width - infoWidth;
+            foreach (Button button in new[] { playback, settings })
+            {
+                bool fits = remaining >= minimumSlider + button.Width;
+                button.Visible = fits;
+                if (fits)
+                    remaining -= button.Width;
+            }
             controls.ResumeLayout();
-        };
+        }
+        controls.ClientSizeChanged += (_, _) => LayoutControls();
 
         var empty = new Label
         {
-            Text = "영상 열기  ·  Ctrl+O",
+            Text = EmptyPlayerText,
             ForeColor = Color.FromArgb(171, 178, 189),
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleCenter
         };
-        empty.Click += (_, _) => Try(retrySource is not null ? CancelNetworkRetry : OpenDialog);
+        empty.Click += (_, _) =>
+        {
+            if (retrySource is not null)
+                Try(CancelNetworkRetry);
+        };
         video.Controls.Add(empty);
         Controls.Add(video);
         Controls.Add(controls);
         Controls.Add(bar);
+        InitializeFileNavigation();
+        ClientSizeChanged += (_, _) => PositionOverlayChrome();
+        PaddingChanged += (_, _) => PositionOverlayChrome();
+        ConfigureChromeLayout();
+        LayoutControls();
         EnableFileDrop(this, files => OpenDroppedFiles(files));
         timeline.MouseDown += (_, e) => dragging = e.Button == MouseButtons.Left;
         timeline.MouseCaptureChanged += (_, _) =>
@@ -225,12 +254,13 @@ internal sealed partial class PlayerWindow : Form, IMessageFilter
         if (!File.Exists(file))
             throw new InvalidOperationException("파일을 찾을 수 없습니다.");
         string fullPath = Path.GetFullPath(file);
-        var extensions = IsPhoto(fullPath) ? PhotoExtensions : VideoExtensions;
-        string[] videos;
+        bool includePhotos = IsPhoto(fullPath);
+        string[] entries;
         try
         {
-            videos = Directory.EnumerateFiles(Path.GetDirectoryName(fullPath)!)
-                .Where(candidate => extensions.Contains(Path.GetExtension(candidate)) &&
+            entries = Directory.EnumerateFiles(Path.GetDirectoryName(fullPath)!)
+                .Where(candidate => (VideoExtensions.Contains(Path.GetExtension(candidate)) ||
+                    (includePhotos && IsPhoto(candidate))) &&
                     !string.Equals(candidate, fullPath, StringComparison.OrdinalIgnoreCase))
                 .Append(fullPath)
                 .OrderBy(Path.GetFileName, Comparer<string?>.Create(StrCmpLogicalW))
@@ -238,12 +268,12 @@ internal sealed partial class PlayerWindow : Form, IMessageFilter
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
-            videos = [fullPath];
+            entries = [fullPath];
         }
         failedFiles.Clear();
         OpenMedia(fullPath, Path.GetFileName(fullPath));
-        folderVideos = videos;
-        folderIndex = Array.IndexOf(videos, fullPath);
+        folderVideos = entries;
+        folderIndex = Array.IndexOf(entries, fullPath);
         RefreshPlaylist();
     }
 
@@ -366,6 +396,9 @@ internal sealed partial class PlayerWindow : Form, IMessageFilter
     }
 
     private void OpenMedia(string source, string title, bool? repeat = null)
+        => LoadPlayback(source, title, repeat, ReadPosition(source));
+
+    private void LoadPlayback(string source, string title, bool? repeat, string? start)
     {
         SavePosition();
         if (player is null)
@@ -383,7 +416,7 @@ internal sealed partial class PlayerWindow : Form, IMessageFilter
         scaleMode = "0";
         zoom = 100;
         path = source;
-        LoadMedia(player, source, ReadPosition(source));
+        LoadMedia(player, source, start);
         playOnLoad = true;
         ApplyScale();
         repeatVideo = repeat ?? repeatVideo;
@@ -420,8 +453,9 @@ internal sealed partial class PlayerWindow : Form, IMessageFilter
 
     private void UpdatePlayback()
     {
+        UpdateFileNavigation();
         Point cursorPosition = Cursor.Position;
-        if (autoHideChrome && desktop is null && !fullscreen && cursorPosition != lastCursorPosition &&
+        if (autoHideChrome && desktop is null && !fullscreen && !resizingWindow && cursorPosition != lastCursorPosition &&
             Form.ActiveForm == this && Bounds.Contains(cursorPosition))
         {
             chromeDeadline = Environment.TickCount64 + 3000;
@@ -431,7 +465,7 @@ internal sealed partial class PlayerWindow : Form, IMessageFilter
         lastCursorPosition = cursorPosition;
 
         if (autoHideChrome && desktop is null && !fullscreen && loaded && bar.Visible &&
-            !dragging && settingsMenu?.Visible != true && Environment.TickCount64 >= chromeDeadline)
+            !dragging && !resizingWindow && settingsMenu?.Visible != true && Environment.TickCount64 >= chromeDeadline)
             SetChromeVisible(false);
 
         if (desktop is not null && ++ticks % 20 == 0)
@@ -555,7 +589,8 @@ internal sealed partial class PlayerWindow : Form, IMessageFilter
             (work.Height - chromeHeight) / height));
         int targetWidth = (int)Math.Round(width * scale) + chromeWidth;
         int targetHeight = (int)Math.Round(height * scale) + chromeHeight;
-        Size minimum = new(Math.Min(405, targetWidth), Math.Min(104, targetHeight));
+        var gripMinimum = ResizeMinimum;
+        Size minimum = new(Math.Min(gripMinimum.Width, targetWidth), Math.Min(gripMinimum.Height, targetHeight));
         MinimumSize = minimum;
         Bounds = new Rectangle(
             Math.Clamp(Left, work.Left, work.Right - targetWidth),
@@ -565,14 +600,21 @@ internal sealed partial class PlayerWindow : Form, IMessageFilter
 
     public bool PreFilterMessage(ref Message message)
     {
+        if (message.Msg == 0x0204 && desktop is null && IsHandleCreated &&
+            (message.HWnd == Handle || IsChild(Handle, message.HWnd)))
+        {
+            RequestSettings();
+            return true;
+        }
         if (settingsMenu?.Visible == true && message.Msg is 0x100 or 0x101)
         {
             held = Keys.None;
             return false;
         }
 
-        if (autoHideChrome && desktop is null && !fullscreen &&
+        if (autoHideChrome && desktop is null && !fullscreen && !resizingWindow &&
             message.Msg is 0x100 or 0x200 or 0x201 or 0x204 or 0x207 &&
+            (message.Msg != 0x200 || Cursor.Position != lastCursorPosition) &&
             (message.HWnd == Handle || IsChild(Handle, message.HWnd)))
         {
             chromeDeadline = Environment.TickCount64 + 3000;
@@ -819,15 +861,18 @@ internal sealed partial class PlayerWindow : Form, IMessageFilter
     private void PlayPlaylistItemCore(int index)
     {
         string file = folderVideos[index];
-        OpenMedia(file, Path.GetFileName(file));
+        LoadPlayback(file, Path.GetFileName(file), null, "0");
         folderIndex = index;
         RefreshPlaylist();
     }
 
     private void ShowSettings()
     {
+        if (desktop is not null || settingsMenu is { IsDisposed: false })
+            return;
         var menu = new ContextMenuStrip();
         settingsMenu = menu;
+        menu.Items.Add("파일 열기… (Ctrl+O)", null, (_, _) => BeginInvoke(() => Try(OpenDialog)));
         var slideshow = new ToolStripMenuItem("사진 슬라이드 보기");
         foreach (int seconds in new[] { 0, 3, 5, 10, 15 })
         {
@@ -854,9 +899,10 @@ internal sealed partial class PlayerWindow : Form, IMessageFilter
             SetChromeVisible(true);
         };
         menu.Items.Add(autoHide);
+        menu.Items.Add("바탕화면 재생 (Ctrl+D)", null, (_, _) => BeginInvoke(() => Try(ToggleDesktop))).Enabled = loaded;
         menu.Items.Add("네트워크 스트림 열기 (Ctrl+N)", null, (_, _) => BeginInvoke(() => Try(OpenNetworkDialog)));
         var playbackModes = new ToolStripMenuItem("재생 모드");
-        foreach (var (label, repeat) in new[] { ("순서대로 보기", false), ("현재 영상 반복", true) })
+        foreach (var (label, repeat) in new[] { ("목록 순서대로 반복", false), ("현재 영상 반복", true) })
         {
             var item = new ToolStripMenuItem(label) { Checked = repeatVideo == repeat };
             item.Click += (_, _) => Try(() =>
@@ -899,14 +945,66 @@ internal sealed partial class PlayerWindow : Form, IMessageFilter
         menu.Show(Cursor.Position);
     }
 
+    private void RequestSettings()
+    {
+        if (settingsRequested || settingsMenu is { IsDisposed: false } || desktop is not null || Disposing)
+            return;
+        settingsRequested = true;
+        BeginInvoke(() =>
+        {
+            settingsRequested = false;
+            Try(ShowSettings);
+        });
+    }
+
     private void SetChromeVisible(bool visible)
     {
         SuspendLayout();
+        ConfigureChromeLayout();
         bar.Visible = visible;
         controls.Visible = visible;
-        Padding = visible ? FramePadding : Padding.Empty;
+        BackColor = visible ? WindowEdge : Color.Black;
+        UpdateResizePadding();
         ResumeLayout();
     }
+
+    private void ConfigureChromeLayout()
+    {
+        var titleDock = autoHideChrome ? DockStyle.None : DockStyle.Top;
+        if (bar.Dock != titleDock)
+        {
+            bar.Dock = titleDock;
+            controls.Dock = autoHideChrome ? DockStyle.None : DockStyle.Bottom;
+            if (autoHideChrome)
+            {
+                controls.BringToFront();
+                bar.BringToFront();
+            }
+            else
+                video.BringToFront();
+        }
+        PositionOverlayChrome();
+    }
+
+    private void PositionOverlayChrome()
+    {
+        if (!autoHideChrome)
+            return;
+        int width = Math.Max(0, ClientSize.Width - Padding.Horizontal);
+        bar.SetBounds(Padding.Left, Padding.Top, width, bar.Height);
+        controls.SetBounds(Padding.Left, Math.Max(Padding.Top, ClientSize.Height - Padding.Bottom - controls.Height),
+            width, controls.Height);
+    }
+
+    private void UpdateResizePadding()
+    {
+        var padding = fullscreen || WindowState != FormWindowState.Normal
+            ? Padding.Empty : new Padding(LogicalToDeviceUnits(6));
+        if (Padding != padding)
+            Padding = padding;
+    }
+
+    private Size ResizeMinimum => new(LogicalToDeviceUnits(140), LogicalToDeviceUnits(86));
 
     private void SetScale(string mode, int percent)
     {
@@ -944,6 +1042,7 @@ internal sealed partial class PlayerWindow : Form, IMessageFilter
             throw;
         }
         desktop = surface;
+        HideFileNavigation();
         playlistWindow?.Close();
         if (fullscreen)
             ToggleFullscreen();
@@ -1077,19 +1176,60 @@ internal sealed partial class PlayerWindow : Form, IMessageFilter
         get
         {
             var settings = base.CreateParams;
-            settings.Style |= 0x00020000 | 0x00010000 | 0x00080000;
+            settings.Style &= ~0x00C00000; // KoView draws its own caption.
+            settings.Style |= 0x00020000 | 0x00010000 | 0x00080000 | 0x00040000; // WS_THICKFRAME enables native resizing.
             return settings;
         }
     }
 
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        const int nonClientRenderingPolicy = 2;
+        int disabled = 1;
+        DwmSetWindowAttribute(Handle, nonClientRenderingPolicy, ref disabled, sizeof(int));
+    }
+
     protected override void WndProc(ref Message message)
     {
-        base.WndProc(ref message);
+        // The native libmpv window can receive mouse input on another thread.
+        if (message.Msg == 0x0210 && (message.WParam.ToInt64() & 0xffff) == 0x0204)
+            RequestSettings();
+        if (message.Msg is 0x0083 or 0x0085) // WM_NCCALCSIZE or WM_NCPAINT
+        {
+            // Keep the full client area and let KoView paint its custom frame.
+            message.Result = 0;
+            return;
+        }
+        if (message.Msg == 0x0086) // WM_NCACTIVATE
+        {
+            nint original = message.LParam;
+            message.LParam = -1; // Update activation without repainting a native caption.
+            base.WndProc(ref message);
+            message.LParam = original;
+        }
+        else
+            base.WndProc(ref message);
+        if (message.Msg == 0x0024) // WM_GETMINMAXINFO
+        {
+            var monitor = Screen.FromHandle(message.HWnd);
+            var work = monitor.WorkingArea;
+            var sizing = Marshal.PtrToStructure<WindowSizing>(message.LParam);
+            sizing.MaxPosition = new Point(work.Left - monitor.Bounds.Left, work.Top - monitor.Bounds.Top);
+            sizing.MaxSize = work.Size;
+            Marshal.StructureToPtr(sizing, message.LParam, false);
+        }
+        if (message.Msg == 0x0232) // WM_EXITSIZEMOVE
+        {
+            resizingWindow = false;
+            chromeDeadline = Environment.TickCount64 + 3000;
+        }
         if (fullscreen || WindowState != FormWindowState.Normal || desktop is not null)
             return;
 
         if (message.Msg == 0x0231) // WM_ENTERSIZEMOVE
         {
+            resizingWindow = true;
             double width = loaded ? player!.Number("dwidth") : 0;
             double height = loaded ? player!.Number("dheight") : 0;
             resizeAspect = width > 0 && height > 0 ? width / height : 0;
@@ -1110,14 +1250,19 @@ internal sealed partial class PlayerWindow : Form, IMessageFilter
         long packed = message.LParam.ToInt64();
         Point point = window.PointToClient(new Point((short)packed, (short)(packed >> 16)));
         int edge = window.Padding.Left;
+        int corner = window.LogicalToDeviceUnits(14);
         bool left = point.X < edge, right = point.X >= window.ClientSize.Width - edge;
         bool top = point.Y < edge, bottom = point.Y >= window.ClientSize.Height - edge;
+        bool nearLeft = point.X < corner, nearRight = point.X >= window.ClientSize.Width - corner;
+        bool nearTop = point.Y < corner, nearBottom = point.Y >= window.ClientSize.Height - corner;
         if (top)
-            message.Result = left ? 13 : right ? 14 : 12;
+            message.Result = nearLeft ? 13 : nearRight ? 14 : 12;
         else if (bottom)
-            message.Result = left ? 16 : right ? 17 : 15;
-        else if (left || right)
-            message.Result = left ? 10 : 11;
+            message.Result = nearLeft ? 16 : nearRight ? 17 : 15;
+        else if (left)
+            message.Result = nearTop ? 13 : nearBottom ? 16 : 10;
+        else if (right)
+            message.Result = nearTop ? 14 : nearBottom ? 17 : 11;
     }
 
     private sealed class PlaylistForm : Form
@@ -1172,6 +1317,14 @@ internal sealed partial class PlayerWindow : Form, IMessageFilter
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    private struct WindowSizing
+    {
+        public Point Reserved;
+        public Size MaxSize;
+        public Point MaxPosition, MinTrackSize, MaxTrackSize;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     private struct SizingRect
     {
         public int Left, Top, Right, Bottom;
@@ -1182,4 +1335,5 @@ internal sealed partial class PlayerWindow : Form, IMessageFilter
     [DllImport("user32.dll")] private static extern bool ReleaseCapture();
     [DllImport("user32.dll")] private static extern bool IsChild(nint parent, nint window);
     [DllImport("user32.dll")] private static extern nint SendMessage(nint hwnd, uint msg, nint wParam, nint lParam);
+    [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(nint hwnd, int attribute, ref int value, int size);
 }

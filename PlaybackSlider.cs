@@ -36,14 +36,14 @@ internal sealed class PlaybackSlider : Control
         int available = Width - 16;
         int played = (int)Math.Round(available * Value / (double)Maximum);
         e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        using var track = new Pen(Color.FromArgb(96, 130, 130, 136), 1.5f);
+        using var track = new Pen(Color.FromArgb(96, 130, 130, 136), 1.25f);
         e.Graphics.DrawLine(track, 8, y, Width - 8, y);
         if (!Enabled)
             return;
-        using var progress = new Pen(Color.FromArgb(127, 127, 134), 1.5f);
+        using var progress = new Pen(Color.FromArgb(127, 127, 134), 1.25f);
         e.Graphics.DrawLine(progress, 8, y, 8 + played, y);
         using var thumb = new SolidBrush(Color.FromArgb(151, 151, 158));
-        e.Graphics.FillEllipse(thumb, 5 + played, y - 3, 6, 6);
+        e.Graphics.FillEllipse(thumb, 5.5f + played, y - 2.5f, 5, 5);
     }
 
     protected override void OnMouseDown(MouseEventArgs e)

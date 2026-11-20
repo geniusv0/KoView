@@ -30,6 +30,7 @@ internal sealed class Mpv : IDisposable
             Option("input-vo-keyboard", "no");
             Option("input-cursor", "no");
             Option("keep-open", "yes");
+            Option("keep-open-pause", "no");
             Option("load-scripts", "no");
             Check(mpv_initialize(handle));
             Check(mpv_request_log_messages(handle, "warn"));
